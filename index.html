@@ -558,6 +558,12 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
       <div class="section-head"><div><h2>Settings</h2><p>Export, import, and about</p></div></div>
 
       <div class="io-card">
+        <h4>📊 Tracking Fields</h4>
+        <p>Choose which nutrition metrics to track. Carbs are always on. Changes apply everywhere in the app.</p>
+        <div id="field-toggles" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+
+      <div class="io-card">
         <h4>📤 Export Data</h4>
         <p>Save all your events, inventory, and nutrition plans as a JSON file. Share it with your crew or back it up.</p>
         <button class="btn btn-primary" onclick="exportData()">Export to Clipboard</button>
@@ -644,14 +650,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
     </div>
     <div class="form-section">
       <label>Nutrition Targets (per hour)</label>
-      <div class="form-row">
-        <div><label>Carbs (g/hr)</label><input type="number" id="ev-carbs-hr" value="60"></div>
-        <div><label>Sodium (mg/hr)</label><input type="number" id="ev-sodium-hr" value="800"></div>
-      </div>
-      <div class="form-row">
-        <div><label>Fluid (ml/hr)</label><input type="number" id="ev-fluid-hr" value="750"></div>
-        <div><label>Calories (kcal/hr)</label><input type="number" id="ev-cals-hr" value="250"></div>
-      </div>
+      <div id="ev-target-fields"></div>
     </div>
     <label>Notes</label>
     <textarea id="ev-notes" rows="2" placeholder="Race conditions, crew notes…" style="resize:vertical"></textarea>
@@ -680,14 +679,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
     </div>
     <label>Serving Description</label>
     <input type="text" id="food-serving" placeholder="e.g. 1 gel (40g)">
-    <div class="form-row">
-      <div><label>Carbs (g)</label><input type="number" id="food-carbs" value="0" step="0.1"></div>
-      <div><label>Calories (kcal)</label><input type="number" id="food-cals" value="0"></div>
-    </div>
-    <div class="form-row">
-      <div><label>Sodium (mg)</label><input type="number" id="food-sodium" value="0"></div>
-      <div><label>Fluid (ml)</label><input type="number" id="food-fluid" value="0"></div>
-    </div>
+    <div id="food-macro-fields"></div>
     <label>Notes</label>
     <input type="text" id="food-notes" placeholder="e.g. gut-friendly, caffeine, good cold">
     <button class="btn btn-primary" style="width:100%" onclick="saveFood()">Save Item</button>
@@ -742,7 +734,21 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 
 <script>
 // ── STORAGE ──
-const SK = { events:'tf_events', inventory:'tf_inventory', plans:'tf_plans', racestate:'tf_racestate', seen:'tf_seen' };
+const SK = { events:'tf_events', inventory:'tf_inventory', plans:'tf_plans', racestate:'tf_racestate', seen:'tf_seen', fields:'tf_fields' };
+
+// ── TRACKING FIELDS ──
+const ALL_FIELDS = [
+  { key:'carbs',     label:'Carbs',    unit:'g',    icon:'🌾', def:true,  locked:true  },
+  { key:'sodium',    label:'Sodium',   unit:'mg',   icon:'🧂', def:true,  locked:false },
+  { key:'fluid',     label:'Fluid',    unit:'ml',   icon:'💧', def:true,  locked:false },
+  { key:'cals',      label:'Calories', unit:'kcal', icon:'🔥', def:true,  locked:false },
+  { key:'caffeine',  label:'Caffeine', unit:'mg',   icon:'☕', def:false, locked:false },
+  { key:'protein',   label:'Protein',  unit:'g',    icon:'💪', def:false, locked:false },
+  { key:'potassium', label:'Potassium',unit:'mg',   icon:'⚡', def:false, locked:false },
+];
+let activeFields = load(SK.fields) || ALL_FIELDS.filter(f=>f.def).map(f=>f.key);
+function fieldOn(key) { return activeFields.includes(key); }
+function saveFields() { save(SK.fields, activeFields); }
 function load(k) { try { const d=localStorage.getItem(k); return d?JSON.parse(d):null; } catch { return null; } }
 function save(k,v) { try { localStorage.setItem(k,JSON.stringify(v)); } catch {} }
 
@@ -797,11 +803,42 @@ function showTab(name) {
   if(name==='inventory') renderInventory();
   if(name==='nutrition') renderNutritionTab();
   if(name==='raceday')   renderRaceDayTab();
+  if(name==='about')     renderFieldToggles();
 }
 
 // ── EXPORT / IMPORT ──
+function renderFieldToggles() {
+  const el = document.getElementById('field-toggles');
+  if (!el) return;
+  el.innerHTML = ALL_FIELDS.map(f => {
+    const on = fieldOn(f.key);
+    return `<label style="display:flex;align-items:center;justify-content:space-between;cursor:${f.locked?'default':'pointer'}">
+      <span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500">
+        <span>${f.icon}</span>
+        <span>${f.label} <span style="color:var(--fg-3);font-weight:400">(${f.unit})</span></span>
+        ${f.locked?'<span style="font-size:10px;background:var(--bg-3);border-radius:4px;padding:1px 5px;color:var(--fg-3)">required</span>':''}
+      </span>
+      <div onclick="${f.locked?'':(`toggleField('${f.key}')`)}" style="width:42px;height:24px;border-radius:12px;background:${on?'var(--accent)':'var(--border)'};position:relative;transition:background .2s;cursor:${f.locked?'default':'pointer'};flex-shrink:0">
+        <div style="position:absolute;top:3px;left:${on?'21px':'3px'};width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></div>
+      </div>
+    </label>`;
+  }).join('');
+}
+
+function toggleField(key) {
+  if (activeFields.includes(key)) {
+    activeFields = activeFields.filter(k => k !== key);
+  } else {
+    activeFields.push(key);
+  }
+  saveFields();
+  renderFieldToggles();
+  renderInventory();
+  renderNutritionContent();
+}
+
 function exportData() {
-  const data = JSON.stringify({ version:2, events, inventory, plans }, null, 2);
+  const data = JSON.stringify({ version:2, events, inventory, plans, activeFields }, null, 2);
   navigator.clipboard.writeText(data).then(()=>{
     toast('Copied to clipboard ✓ — paste it somewhere safe');
   }).catch(()=>{
@@ -819,9 +856,11 @@ function importData() {
     events    = d.events;
     inventory = d.inventory;
     plans     = d.plans || {};
+    if(d.activeFields) activeFields = d.activeFields;
     save(SK.events, events);
     save(SK.inventory, inventory);
     save(SK.plans, plans);
+    saveFields();
     document.getElementById('import-json').value = '';
     renderEvents();
     toast(`Imported ${events.length} events, ${inventory.length} foods ✓`);
@@ -833,7 +872,8 @@ function importData() {
 function resetAllData() {
   if (!confirm('Reset ALL data? This cannot be undone.')) return;
   events=[]; inventory=defaultInventory(); plans={}; raceState={};
-  [SK.events,SK.inventory,SK.plans,SK.racestate].forEach(k=>localStorage.removeItem(k));
+  activeFields=ALL_FIELDS.filter(f=>f.def).map(f=>f.key);
+  [SK.events,SK.inventory,SK.plans,SK.racestate,SK.fields].forEach(k=>localStorage.removeItem(k));
   renderEvents(); renderInventory();
   toast('All data reset');
 }
@@ -863,6 +903,38 @@ function getCps() {
             .filter(c=>c.name||c.km).sort((a,b)=>a.km-b.km);
 }
 
+const TARGET_DEFAULTS = {carbs:60,sodium:800,fluid:750,cals:250,caffeine:0,protein:0,potassium:0};
+
+function renderEventTargetFields(vals) {
+  const el = document.getElementById('ev-target-fields'); if(!el) return;
+  const pairs = ALL_FIELDS.filter(f=>fieldOn(f.key));
+  let html = '';
+  for(let i=0;i<pairs.length;i+=2){
+    html += '<div class="form-row">';
+    for(let j=i;j<Math.min(i+2,pairs.length);j++){
+      const f=pairs[j];
+      html += `<div><label>${f.label} (${f.unit}/hr)</label><input type="number" id="ev-${f.key}-hr" value="${vals?.[f.key]??TARGET_DEFAULTS[f.key]??0}" step="1"></div>`;
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderFoodMacroFields(vals) {
+  const el = document.getElementById('food-macro-fields'); if(!el) return;
+  const pairs = ALL_FIELDS.filter(f=>fieldOn(f.key));
+  let html = '';
+  for(let i=0;i<pairs.length;i+=2){
+    html += '<div class="form-row">';
+    for(let j=i;j<Math.min(i+2,pairs.length);j++){
+      const f=pairs[j];
+      html += `<div><label>${f.label} (${f.unit})</label><input type="number" id="food-${f.key}" value="${vals?.[f.key]??0}" step="${f.key==='carbs'?'0.1':'1'}"></div>`;
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
 function openAddEvent() {
   document.getElementById('event-modal-title').textContent='New Event';
   document.getElementById('edit-event-id').value='';
@@ -875,11 +947,8 @@ function openAddEvent() {
   document.getElementById('ev-target-laps').value='20';
   document.getElementById('ev-total-km').value='100';
   document.getElementById('ev-total-elev').value='3000';
-  document.getElementById('ev-carbs-hr').value='60';
-  document.getElementById('ev-sodium-hr').value='800';
-  document.getElementById('ev-fluid-hr').value='750';
-  document.getElementById('ev-cals-hr').value='250';
   document.getElementById('cp-list-edit').innerHTML='';
+  renderEventTargetFields(null);
   toggleEventType();
   openModal('modal-add-event');
 }
@@ -899,10 +968,7 @@ function editEvent(id) {
   document.getElementById('ev-target-laps').value=ev.targetLaps||20;
   document.getElementById('ev-total-km').value=ev.totalKm||100;
   document.getElementById('ev-total-elev').value=ev.totalElev||3000;
-  document.getElementById('ev-carbs-hr').value=ev.targets?.carbs||60;
-  document.getElementById('ev-sodium-hr').value=ev.targets?.sodium||800;
-  document.getElementById('ev-fluid-hr').value=ev.targets?.fluid||750;
-  document.getElementById('ev-cals-hr').value=ev.targets?.cals||250;
+  renderEventTargetFields(ev.targets||{});
   document.getElementById('cp-list-edit').innerHTML='';
   (ev.checkpoints||[]).forEach(cp=>addCpField(cp));
   toggleEventType();
@@ -926,12 +992,7 @@ function saveEvent() {
     totalKm:parseFloat(document.getElementById('ev-total-km').value),
     totalElev:parseFloat(document.getElementById('ev-total-elev').value),
     checkpoints:getCps(),
-    targets:{
-      carbs:parseInt(document.getElementById('ev-carbs-hr').value),
-      sodium:parseInt(document.getElementById('ev-sodium-hr').value),
-      fluid:parseInt(document.getElementById('ev-fluid-hr').value),
-      cals:parseInt(document.getElementById('ev-cals-hr').value),
-    }
+    targets: Object.fromEntries(ALL_FIELDS.filter(f=>fieldOn(f.key)).map(f=>[f.key, parseFloat(document.getElementById(`ev-${f.key}-hr`)?.value)||0]))
   };
   if(editId){const i=events.findIndex(e=>e.id===editId);if(i>=0)events[i]=ev;else events.push(ev);}
   else events.push(ev);
@@ -991,7 +1052,7 @@ function openAddFood() {
   document.getElementById('food-modal-title').textContent='Add Food Item';
   document.getElementById('edit-food-id').value='';
   ['food-name','food-serving','food-notes'].forEach(id=>document.getElementById(id).value='');
-  ['food-carbs','food-cals','food-sodium','food-fluid'].forEach(id=>document.getElementById(id).value='0');
+  renderFoodMacroFields(null);
   document.getElementById('food-cat').value='Gels & Chews';
   openModal('modal-add-food');
 }
@@ -1003,10 +1064,7 @@ function editFood(id) {
   document.getElementById('food-name').value=f.name;
   document.getElementById('food-cat').value=f.cat;
   document.getElementById('food-serving').value=f.serving||'';
-  document.getElementById('food-carbs').value=f.carbs;
-  document.getElementById('food-cals').value=f.cals;
-  document.getElementById('food-sodium').value=f.sodium;
-  document.getElementById('food-fluid').value=f.fluid;
+  renderFoodMacroFields(f);
   document.getElementById('food-notes').value=f.notes||'';
   openModal('modal-add-food');
 }
@@ -1019,10 +1077,7 @@ function saveFood() {
     id:editId||uid(), name,
     cat:document.getElementById('food-cat').value,
     serving:document.getElementById('food-serving').value,
-    carbs:parseFloat(document.getElementById('food-carbs').value)||0,
-    cals:parseFloat(document.getElementById('food-cals').value)||0,
-    sodium:parseFloat(document.getElementById('food-sodium').value)||0,
-    fluid:parseFloat(document.getElementById('food-fluid').value)||0,
+    ...Object.fromEntries(ALL_FIELDS.map(f=>[f.key, parseFloat(document.getElementById(`food-${f.key}`)?.value)||0])),
     notes:document.getElementById('food-notes').value,
   };
   if(editId){const i=inventory.findIndex(f=>f.id===editId);if(i>=0)inventory[i]=item;else inventory.push(item);}
@@ -1057,10 +1112,13 @@ function renderInventory() {
         <div class="inv-name">${f.name}</div>
         <div class="inv-cat">${f.cat}${f.serving?' · '+f.serving:''}</div>
         <div class="macro-row">
-          <span class="chip"><strong>${fmt(f.carbs,'g')}</strong> carbs</span>
-          <span class="chip"><strong>${fmt(f.cals,'kcal')}</strong></span>
-          <span class="chip"><strong>${fmt(f.sodium,'mg')}</strong> Na</span>
-          ${f.fluid>0?`<span class="chip"><strong>${fmt(f.fluid,'ml')}</strong></span>`:''}
+          ${fieldOn('carbs')?`<span class="chip"><strong>${fmt(f.carbs,'g')}</strong> carbs</span>`:''}
+          ${fieldOn('cals')?`<span class="chip"><strong>${fmt(f.cals,'kcal')}</strong></span>`:''}
+          ${fieldOn('sodium')?`<span class="chip"><strong>${fmt(f.sodium,'mg')}</strong> Na</span>`:''}
+          ${fieldOn('fluid')&&f.fluid>0?`<span class="chip"><strong>${fmt(f.fluid,'ml')}</strong> fluid</span>`:''}
+          ${fieldOn('caffeine')&&f.caffeine>0?`<span class="chip"><strong>${fmt(f.caffeine,'mg')}</strong> caf</span>`:''}
+          ${fieldOn('protein')&&f.protein>0?`<span class="chip"><strong>${fmt(f.protein,'g')}</strong> pro</span>`:''}
+          ${fieldOn('potassium')&&f.potassium>0?`<span class="chip"><strong>${fmt(f.potassium,'mg')}</strong> K</span>`:''}
         </div>
         ${f.notes?`<div style="font-size:11px;color:var(--fg-3);margin-top:2px">${f.notes}</div>`:''}
       </div>
@@ -1094,11 +1152,10 @@ function renderNutritionContent() {
   if(!activeNutritionEventId){el.innerHTML=`<div class="select-banner">Select an event above.</div>`;return;}
   const ev=getEvent(activeNutritionEventId); if(!ev) return;
   const t=ev.targets||{};
-  const targetsHtml=`<div class="targets-bar">
-    <div><div class="t-val">${t.carbs||60}g</div><div class="t-lbl">Carbs/hr</div></div>
-    <div><div class="t-val">${t.sodium||800}mg</div><div class="t-lbl">Sodium/hr</div></div>
-    <div><div class="t-val">${t.fluid||750}ml</div><div class="t-lbl">Fluid/hr</div></div>
-  </div>`;
+  const activeTargetFields = ALL_FIELDS.filter(f=>fieldOn(f.key) && (t[f.key]||0)>0);
+  const targetsHtml=activeTargetFields.length?`<div class="targets-bar" style="grid-template-columns:repeat(${Math.min(activeTargetFields.length,4)},1fr)">
+    ${activeTargetFields.map(f=>`<div><div class="t-val">${t[f.key]||0}${f.unit}</div><div class="t-lbl">${f.label}/hr</div></div>`).join('')}
+  </div>`:'';
 
   if(ev.type==='backyard_ultra') {
     const laps=ev.targetLaps||20;
@@ -1109,8 +1166,9 @@ function renderNutritionContent() {
         const f=getFood(fid);
         return f?`<span class="lap-item-tag" onclick="removeFoodFromLap('${ev.id}',${i},'${fid}')">${foodIcon(f)} ${f.name} <span style="color:var(--fg-3)">×</span></span>`:'';
       }).join('');
-      const tot=(plan[i]||[]).reduce((a,fid)=>{const f=getFood(fid);if(f){a.c+=f.carbs;a.s+=f.sodium;a.fl+=f.fluid;}return a;},{c:0,s:0,fl:0});
-      const sumStr=tot.c>0?`${fmt(tot.c,'g')} carbs · ${fmt(tot.s,'mg')} Na · ${fmt(tot.fl,'ml')}`:'';
+      const tot=(plan[i]||[]).reduce((a,fid)=>{const f=getFood(fid);if(f){ALL_FIELDS.forEach(fd=>{if(fieldOn(fd.key))a[fd.key]=(a[fd.key]||0)+(f[fd.key]||0);});}return a;},{});
+      const sumParts=ALL_FIELDS.filter(f=>fieldOn(f.key)&&(tot[f.key]||0)>0).map(f=>`${fmt(tot[f.key],f.unit)} ${f.label.toLowerCase()}`);
+      const sumStr=sumParts.join(' · ');
       rows+=`<div class="lap-row">
         <div class="lap-num">${i}</div>
         <div>
@@ -1162,7 +1220,7 @@ function renderPickerList() {
     <div class="picker-item" onclick="addFoodToLap('${f.id}')">
       <span>${foodIcon(f)}</span>
       <span class="picker-item-name">${f.name}</span>
-      <span class="picker-item-macro">${fmt(f.carbs,'g')} carbs · ${fmt(f.sodium,'mg')} Na</span>
+      <span class="picker-item-macro">${ALL_FIELDS.filter(fd=>fieldOn(fd.key)&&(f[fd.key]||0)>0).slice(0,3).map(fd=>`${fmt(f[fd.key],fd.unit)} ${fd.label.toLowerCase()}`).join(' · ')}</span>
     </div>`).join('');
 }
 
@@ -1406,7 +1464,7 @@ function renderRaceLapPickerModal(eventId,lapKey) {
       <div class="inv-row" style="padding:8px 10px;margin-bottom:5px">
         <div class="inv-icon">${foodIcon(f)}</div>
         <div class="inv-info"><div class="inv-name">${f.name}</div>
-          <div class="macro-row"><span class="chip"><strong>${fmt(f.carbs,'g')}</strong> carbs</span><span class="chip"><strong>${fmt(f.sodium,'mg')}</strong> Na</span></div>
+          <div class="macro-row">${ALL_FIELDS.filter(fd=>fieldOn(fd.key)&&(f[fd.key]||0)>0).map(fd=>`<span class="chip"><strong>${fmt(f[fd.key],fd.unit)}</strong> ${fd.label.toLowerCase()}</span>`).join('')}</div>
         </div>
         <button class="btn btn-danger btn-sm" onclick="removeRaceLapFood('${fid}')">Remove</button>
       </div>`:''}).join('')
@@ -1419,7 +1477,7 @@ function renderRaceLapPickerModal(eventId,lapKey) {
     <div class="picker-item" onclick="addRaceLapFood('${f.id}')">
       <span>${foodIcon(f)}</span>
       <span class="picker-item-name">${f.name}</span>
-      <span class="picker-item-macro">${fmt(f.carbs,'g')} carbs · ${fmt(f.sodium,'mg')} Na</span>
+      <span class="picker-item-macro">${ALL_FIELDS.filter(fd=>fieldOn(fd.key)&&(f[fd.key]||0)>0).slice(0,3).map(fd=>`${fmt(f[fd.key],fd.unit)} ${fd.label.toLowerCase()}`).join(' · ')}</span>
     </div>`).join('');
 }
 
@@ -1540,12 +1598,70 @@ function defaultInventory() {
     {id:uid(),name:'Panadol (paracetamol)',cat:'Recovery',serving:'2 tablets (1000mg)',carbs:0,cals:0,sodium:0,fluid:0,notes:'Pain management — max 8/day',icon:'💊'},
     {id:uid(),name:'Ibuprofen 200mg',cat:'Recovery',serving:'2 tablets',carbs:0,cals:0,sodium:0,fluid:0,notes:'Anti-inflammatory — avoid empty stomach',icon:'💊'},
     {id:uid(),name:'Anti-nausea tab',cat:'Recovery',serving:'1 tablet',carbs:0,cals:0,sodium:0,fluid:0,notes:'GI relief if needed',icon:'💊'},
+
+    // ── MORE GELS & CHEWS ──
+    {id:uid(),name:'Hammer Gel',cat:'Gels & Chews',serving:'1 gel (33g)',carbs:21,cals:90,sodium:55,fluid:0,notes:'Low sugar, complex carb blend',icon:'🟡'},
+    {id:uid(),name:'Spring Energy Awesome Sauce',cat:'Gels & Chews',serving:'1 pouch (56g)',carbs:28,cals:135,sodium:65,fluid:20,notes:'Real food gel — rice + apple + cinnamon',icon:'🟤'},
+    {id:uid(),name:'Hüma Gel',cat:'Gels & Chews',serving:'1 gel (42g)',carbs:25,cals:100,sodium:50,fluid:30,notes:'Real fruit chia gel, easy on gut',icon:'🟣'},
+    {id:uid(),name:'Clif Shot Gel',cat:'Gels & Chews',serving:'1 gel (34g)',carbs:24,cals:100,sodium:65,fluid:0,notes:'Double espresso version has 100mg caffeine',icon:'🟡'},
+    {id:uid(),name:'PowerBar Gel',cat:'Gels & Chews',serving:'1 gel (41g)',carbs:27,cals:110,sodium:200,fluid:0,notes:'Higher sodium than most gels',icon:'🟡'},
+    {id:uid(),name:'Honey Stinger Chews',cat:'Gels & Chews',serving:'1 packet (53g)',carbs:39,cals:160,sodium:70,fluid:0,notes:'Organic honey-based, easy to chew',icon:'🍯'},
+    {id:uid(),name:'Clif Bloks Extra Sodium',cat:'Gels & Chews',serving:'3 blocks (30g)',carbs:24,cals:100,sodium:200,fluid:0,notes:'Double sodium for hot conditions',icon:'🧱'},
+
+    // ── MORE REAL FOOD ──
+    {id:uid(),name:'Vegemite Toast Squares (2)',cat:'Real Food',serving:'2 squares (40g)',carbs:18,cals:95,sodium:280,fluid:0,notes:'Salty, familiar, easy to eat',icon:'🍞'},
+    {id:uid(),name:'PB&J Sandwich (half)',cat:'Real Food',serving:'Half sandwich (65g)',carbs:28,cals:200,sodium:160,fluid:0,notes:'Classic endurance fuel — early laps',icon:'🥪'},
+    {id:uid(),name:'Nutella on White Bread',cat:'Real Food',serving:'1 slice (60g)',carbs:32,cals:220,sodium:120,fluid:0,notes:'High palatability late in race',icon:'🍫'},
+    {id:uid(),name:'Mini Pancakes with Honey (3)',cat:'Real Food',serving:'3 small pancakes (90g)',carbs:38,cals:220,sodium:180,fluid:0,notes:'Warm option — crew aid station',icon:'🥞'},
+    {id:uid(),name:'Steamed Sweet Potato',cat:'Real Food',serving:'100g',carbs:20,cals:86,sodium:55,fluid:70,notes:'Easy to digest, good potassium',icon:'🍠'},
+    {id:uid(),name:'Plain Crackers with Cheese',cat:'Real Food',serving:'4 crackers + cheese (40g)',carbs:16,cals:150,sodium:280,fluid:0,notes:'Fat + salt snack',icon:'🧀'},
+    {id:uid(),name:'Sushi Rice Ball (savoury)',cat:'Real Food',serving:'1 ball (100g)',carbs:32,cals:140,sodium:350,fluid:20,notes:'Umami + carbs — good night option',icon:'🍙'},
+
+    // ── MORE SAVOURY ──
+    {id:uid(),name:'Instant Mashed Potato Packet',cat:'Savoury',serving:'1 packet made up (250g)',carbs:30,cals:140,sodium:520,fluid:200,notes:'Quick warm calories — just add water',icon:'🥔'},
+    {id:uid(),name:'Mac & Cheese Cup',cat:'Savoury',serving:'1 cup (220g)',carbs:42,cals:300,sodium:680,fluid:180,notes:'Comforting, high cal — night laps',icon:'🧀'},
+    {id:uid(),name:'Udon Noodles',cat:'Savoury',serving:'1 serve (200g)',carbs:42,cals:200,sodium:600,fluid:180,notes:'Easy to eat, warm, good at night',icon:'🍜'},
+    {id:uid(),name:'Mini Cocktail Sausages (4)',cat:'Savoury',serving:'4 sausages (60g)',carbs:2,cals:160,sodium:420,fluid:0,notes:'Protein + fat + salt — savoury craving fix',icon:'🌭'},
+    {id:uid(),name:'Chicken Noodle Soup',cat:'Savoury',serving:'1 mug (250ml)',carbs:12,cals:75,sodium:850,fluid:250,notes:'Warm sodium hit — great after midnight',icon:'🍵'},
+    {id:uid(),name:'Tomato Soup',cat:'Savoury',serving:'1 mug (250ml)',carbs:14,cals:80,sodium:700,fluid:250,notes:'Easy on gut, warming',icon:'🍵'},
+    {id:uid(),name:'Salted Butter Potatoes',cat:'Savoury',serving:'2 pieces (120g)',carbs:22,cals:150,sodium:380,fluid:10,notes:'Butter + salt = great lap fuel',icon:'🥔'},
+    {id:uid(),name:'Pickle Juice Shot',cat:'Savoury',serving:'60ml shot',carbs:0,cals:5,sodium:450,fluid:60,notes:'Cramp relief — fast acting sodium hit',icon:'🥒'},
+
+    // ── MORE DRINKS ──
+    {id:uid(),name:'Mountain Dew (can)',cat:'Drinks & Powders',serving:'375ml',carbs:52,cals:195,sodium:70,fluid:375,notes:'Caffeine + sugar — classic ultra night fuel ⚡',icon:'🟡'},
+    {id:uid(),name:'Ginger Ale 200ml',cat:'Drinks & Powders',serving:'200ml',carbs:21,cals:80,sodium:15,fluid:200,notes:'Nausea relief — flat is better',icon:'🫚'},
+    {id:uid(),name:'Bone Broth',cat:'Drinks & Powders',serving:'250ml mug',carbs:1,cals:35,sodium:900,fluid:250,notes:'Rich sodium + collagen — excellent night aid',icon:'🍵'},
+    {id:uid(),name:'Milo (hot)',cat:'Drinks & Powders',serving:'250ml with milk',carbs:34,cals:200,sodium:140,fluid:250,notes:'Warm carbs + chocolate comfort',icon:'🍫'},
+    {id:uid(),name:'Hot Chocolate',cat:'Drinks & Powders',serving:'250ml',carbs:30,cals:180,sodium:120,fluid:250,notes:'Comfort drink — crew favourite',icon:'☕'},
+    {id:uid(),name:'Lucozade Sport 500ml',cat:'Drinks & Powders',serving:'500ml bottle',carbs:32,cals:140,sodium:138,fluid:500,notes:'Isotonic sports drink',icon:'🟠'},
+
+    // ── MORE BARS & SNACKS ──
+    {id:uid(),name:'Pringles (small tube)',cat:'Bars & Snacks',serving:'~15 chips (28g)',carbs:17,cals:150,sodium:200,fluid:0,notes:'Salty crunch — highly palatable',icon:'🥔'},
+    {id:uid(),name:'Ritz Crackers (6)',cat:'Bars & Snacks',serving:'6 crackers (30g)',carbs:21,cals:150,sodium:200,fluid:0,notes:'Light, easy, salty',icon:'🫓'},
+    {id:uid(),name:'Gummy Bears (small bag)',cat:'Bars & Snacks',serving:'45g bag',carbs:36,cals:140,sodium:25,fluid:0,notes:'Fast sugar, easy to chew',icon:'🐻'},
+    {id:uid(),name:'Turkish Delight bar',cat:'Bars & Snacks',serving:'1 bar (55g)',carbs:38,cals:220,sodium:30,fluid:0,notes:'Sweet craving fix — high sugar',icon:'🍬'},
+    {id:uid(),name:'Mini Snickers',cat:'Bars & Snacks',serving:'2 fun size (40g)',carbs:27,cals:195,sodium:70,fluid:0,notes:'Fat + sugar + salt — late race morale boost',icon:'🍫'},
+    {id:uid(),name:'Larabar',cat:'Bars & Snacks',serving:'1 bar (48g)',carbs:27,cals:200,sodium:5,fluid:0,notes:'Dates + nuts, minimal ingredients',icon:'🟤'},
+    {id:uid(),name:'RX Bar',cat:'Bars & Snacks',serving:'1 bar (52g)',carbs:24,cals:210,sodium:200,fluid:0,notes:'Egg whites + dates + nuts, high protein',icon:'🟫'},
+    {id:uid(),name:'Muesli Bar',cat:'Bars & Snacks',serving:'1 bar (35g)',carbs:24,cals:140,sodium:65,fluid:0,notes:'Familiar everyday snack',icon:'🌾'},
+    {id:uid(),name:'Banana Bread slice',cat:'Bars & Snacks',serving:'1 slice (80g)',carbs:38,cals:230,sodium:180,fluid:10,notes:'Homemade crew food — high palatability',icon:'🍌'},
+
+    // ── MORE FRUIT ──
+    {id:uid(),name:'Grapes (small bunch)',cat:'Fruit',serving:'100g',carbs:17,cals:67,sodium:1,fluid:80,notes:'Hydrating, easy to eat on the go',icon:'🍇'},
+    {id:uid(),name:'Apple (half)',cat:'Fruit',serving:'Half apple (80g)',carbs:11,cals:42,sodium:0,fluid:70,notes:'Refreshing, easy to digest',icon:'🍎'},
+    {id:uid(),name:'Strawberries (5)',cat:'Fruit',serving:'5 berries (75g)',carbs:8,cals:30,sodium:0,fluid:65,notes:'Light, hydrating, easy on stomach',icon:'🍓'},
+
+    // ── MORE RECOVERY ──
+    {id:uid(),name:'Chocolate Recovery Powder',cat:'Recovery',serving:'2 scoops in 300ml milk',carbs:40,cals:280,sodium:160,fluid:300,notes:'Post-lap or between laps protein + carbs',icon:'🍫'},
+    {id:uid(),name:'YoPRO Yoghurt Pouch',cat:'Recovery',serving:'1 pouch (160g)',carbs:16,cals:140,sodium:95,fluid:130,notes:'High protein, smooth — good between laps',icon:'🥛'},
+    {id:uid(),name:'Electrolyte Jelly',cat:'Recovery',serving:'1 sachet (25g)',carbs:6,cals:25,sodium:380,fluid:15,notes:'Easy sodium + fluid hit in solid form',icon:'🟡'},
   ];
 }
 
 // ── INIT ──
 renderEvents();
 renderInventory();
+renderFieldToggles();
 </script>
 
 </body></html>
